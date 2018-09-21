@@ -2,14 +2,13 @@
 extern crate serde;
 extern crate serde_json;
 extern crate clap;
-extern crate trust_dns_resolver;
 extern crate traceroute;
 extern crate hostname;
+extern crate dns_lookup;
 
-use trust_dns_resolver::Resolver;
 use clap::{App, Arg};
 
-// use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::time::Duration;
 use std::thread::sleep;
 
@@ -22,15 +21,21 @@ struct TraceRoute {
 
 #[derive(Debug, Serialize)]
 struct Hop {
+    ttl: u8,
     ip: String,
     #[serde(skip_serializing_if="Option::is_none")]
     hostname: Option<String>,
     rtt: Duration,
 }
 
+fn validate_addr(addr: String) -> Result<(), String> {
+    Ok(())
+}
+
 fn main() {
     let matches = App::new("xtraceroute")
         .arg(Arg::with_name("dest")
+             .validator(validate_addr)
              .index(1)
              .required(true)
             .value_name("DESTINATION")
@@ -43,17 +48,18 @@ fn main() {
     let mut hops: Vec<Option<Hop>> = Vec::new();
 
     let tracert = traceroute::execute(&dest).unwrap(); // TODO: validate this/handle error
-    let resolver = Resolver::from_system_conf().unwrap(); // TODO: add more options to this (and make it async)
 
     for hop_result in tracert {
+        hops.push(None);
+
         match hop_result {
             Ok(hop) => {
                 let index  = (hop.ttl - 1) as usize;
-                hops.push(None);
 
                 let hop = Hop {
+                    ttl: hop.ttl,
                     ip: hop.host.ip().to_string(),
-                    hostname: resolver.reverse_lookup(hop.host.ip()).ok().and_then(|ip| Some(ip.iter().nth(0).unwrap().to_string())),
+                    hostname: dns_lookup::lookup_addr(&hop.host.ip()).ok().and_then(|ip| Some(ip.to_string())),
                     rtt: Duration::from_millis(hop.rtt.num_milliseconds() as u64), // Because std::time::Duration and time::duration::Duration are two different things >.>
                 };
 
